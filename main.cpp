@@ -2,187 +2,200 @@
 #include <ctime>
 #include <cmath>
 #include <iostream>
+
 using namespace std;
 using namespace cv;
 
 const string winname = "frame";
 
-//·¶Î§ÏŞÖÆ
+
+//èŒƒå›´é™åˆ¶
 double cut(double val, double min, double max) {
-	if(val > max)val = max;
-	if(val < min)val = min;
-	return val;
+    if(val > max)val = max;
+    if(val < min)val = min;
+    return val;
 }
 
+
 Mat getChannel(Mat& m, int ch) {
-	vector<Mat> channels(m.channels());
-	split(m, channels);
-	for(uchar *b = channels[0].data,*g= channels[1].data,*r = channels[2].data;
-		b!=channels[0].dataend; b++,g++,r++) {
-		if (*r > *b / 2 || *g > *b / 2) *b = 0;
-	}
-	return channels[ch];
+    vector<Mat> channels(m.channels());
+    split(m, channels);
+// 	for(uchar *b = channels[0].data,*g= channels[1].data,*r = channels[2].data;
+// 		b!=channels[0].dataend; b++,g++,r++) {
+// 		if (*r > *b / 2 || *g > *b / 2) *b = 0;
+// 	}
+    return channels[ch];
 }
 
 
 double distanceP(Point pointO, Point pointA) {
-	return sqrt(pow((pointO.x - pointA.x), 2) + pow((pointO.y - pointA.y), 2));
+    return sqrt(pow((pointO.x - pointA.x), 2) + pow((pointO.y - pointA.y), 2));
 }
 
-int everage(Mat m, int x0, int y0, int w, int h) {
-	if (w*h == 0)return 0;
-	unsigned long long sum = 0;
-	int k = 0;
-	for (int x = cut(x0,0,m.cols); x<cut(x0 + w,0,m.cols); x++) {
-		for(int y=cut(y0,0,m.rows);y<cut(y0+h,0,m.rows);y++) {
-			sum += m.at<uchar>(y, x);
-			k++;
-		}
-	}
-	int ans = sum / k;
-	return ans;
+
+int everage(Mat& m, int x0, int y0, int w, int h) {
+    if(w * h == 0)return 0;
+    unsigned long long sum = 0;
+    int k = 0;
+
+    Mat roi = m(Rect(x0, y0, w, h) & Rect(0, 0, m.cols, m.rows));
+    rectangle(m, Point(x0, y0), Point(x0 + w, y0 + h), Scalar(255, 0, 0));
+
+    //for (int x = cut(x0,0,m.cols); x<cut(x0 + w,0,m.cols); x++) {
+    //	for(int y=cut(y0,0,m.rows);y<cut(y0+h,0,m.rows);y++) {
+
+    for(auto it = roi.begin<uchar>(); it != roi.end<uchar>(); ++it) {
+        auto n = (*it);
+        sum += n;
+        //cout << (n > 200);
+        k++;
+    }
+    //}
+    int ans = sum / k;
+    //cout << "\navg:" << ans << endl;
+    return ans;
 }
 
-const int MIN = 40, MAX = 100; //ãĞÖµÏŞÖÆ
-int s1 = 30, s2 = 30, s3 = 20, s4 = 80; //ËÄ¸öËã·¨ãĞÖµ
+
+const int MIN = 40, MAX = 100; //é˜ˆå€¼é™åˆ¶
+int s1 = 60, s2 = 60; //å››ä¸ªç®—æ³•é˜ˆå€¼
+int iLowH = 107, iHighH = 118;
+
 int h = 1440, w = 1920;
+
 int search_range = 50;
 
+
 int main() {
-	VideoCapture cam(0);
-	if(!cam.isOpened()) {
-		cerr << "ERROR: CANNOT open camera0!" << endl;
-		return -1;
-	}
-	// cam.set(CAP_PROP_FRAME_WIDTH, w);
-	// cam.set(CAP_PROP_FRAME_HEIGHT, h);
-	h = cam.get(CAP_PROP_FRAME_HEIGHT);
-	w = cam.get(CAP_PROP_FRAME_WIDTH);
-	namedWindow(winname);
-	createTrackbar("Hough1", winname, &s1, MAX);
-	createTrackbar("Hough2", winname, &s2, MAX);
-	createTrackbar("Canny1", winname, &s3, MAX);
-	createTrackbar("Canny2", winname, &s4, MAX);
+    VideoCapture cam(0);
+    if(!cam.isOpened()) {
+        cerr << "ERROR: CANNOT open camera0!" << endl;
+        return -1;
+    }
+    // cam.set(CAP_PROP_FRAME_WIDTH, w);
+    // cam.set(CAP_PROP_FRAME_HEIGHT, h);
+    h = cam.get(CAP_PROP_FRAME_HEIGHT);
+    w = cam.get(CAP_PROP_FRAME_WIDTH);
+    namedWindow(winname);
+    createTrackbar("Hough1", winname, &s1, MAX);
+    createTrackbar("Hough2", winname, &s2, MAX);
 
-	Mat original_frame;
-	Point last_pos(w / 2, h / 2);
-	int last_radius = 50;
-
-	//µÈ´ıÓÃ»§¶¨Î»Ô²£¬°´ÈÎÒâ¼üÈ·ÈÏ
-	while(cam.read(original_frame) && (waitKey(10) == -1)) {
-		circle(original_frame, last_pos, last_radius, Scalar(0, 0, 255), 2);
-		imshow("frame", original_frame);
-	}
-
-	while(cam.read(original_frame)) {
-		s1 = cut(s1, 1, MAX);
-		s2 = cut(s2, 1, MAX);
-		s3 = cut(s3, 1, MAX);
-		s4 = cut(s4, 1, MAX);
-		setTrackbarPos("Hough1", winname, s1);
-		setTrackbarPos("Hough2", winname, s2);
-		setTrackbarPos("Canny1", winname, s3);
-		setTrackbarPos("Canny2", winname, s4);
-
-		Mat frame = original_frame.clone();
+    Mat original_frame;
+    Point last_pos(w / 2, h / 2);
+    int last_radius = 50;
 
 
-		//Ô¤´¦Àí
-		// cvtColor(frame, frame, COLOR_BGR2GRAY);
-		frame = getChannel(frame, 0);
-		equalizeHist(frame, frame);
-		GaussianBlur(frame, frame, Size(9, 9), 3, 3);
-		//Canny(frame, frame, s3, s4);
+    createTrackbar("LowH", winname, &iLowH, 179);
+    createTrackbar("HighH", winname, &iHighH, 179);
 
-		//ÕÒÔ²£¬¼ÇÂ¼ÔËĞĞÊ±¼ä
-		vector<Vec3f> circles;
-		clock_t t0 = clock();
-		Rect frameRect(0, 0, frame.cols, frame.rows);
-		Rect roiRectRect(last_pos.x - last_radius - search_range, last_pos.y - last_radius - search_range, 2 * (last_radius + search_range), 2 * (last_radius + search_range));
-		roiRectRect &= frameRect;
-		Mat roi = frame(roiRectRect);
-		Mat croi = original_frame(roiRectRect);
+    //åˆ›å»ºè¿›åº¦æ¡
+    //ç­‰å¾…ç”¨æˆ·å®šä½åœ†ï¼ŒæŒ‰ä»»æ„é”®ç¡®è®¤
+// 	while(cam.read(original_frame) && (waitKey(10) == -1)) {
+// 		circle(original_frame, last_pos, last_radius, Scalar(0, 0, 255), 2);
+// 		imshow("frame", original_frame);
+// 	}
 
-		rectangle(frame, roiRectRect, Scalar(0, 0, 255), 3);
-		rectangle(original_frame ,roiRectRect, Scalar(0, 0, 255), 3);
+    while(cam.read(original_frame)) {
+        s1 = cut(s1, 1, MAX);
+        s2 = cut(s2, 1, MAX);
+        setTrackbarPos("Hough1", winname, s1);
+        setTrackbarPos("Hough2", winname, s2);
 
-		HoughCircles(roi, circles, HOUGH_GRADIENT, 1, search_range, s1, s2, h / 10, 0);
-		clock_t t1 = clock();
 
-		int cnt = circles.size();
-		//ÒÀ´ÎÔÚÍ¼ÖĞ»æÖÆ³öÔ²
-		cvtColor(roi, roi, COLOR_GRAY2BGR);
-		bool found = false;
-		for (auto vec : circles) {
-			Point center(cvRound(vec[0]), cvRound(vec[1]));
-			int radius = cvRound(vec[2]);
-			circle(croi, center, radius, Scalar(155, 50, 255), 3, 8, 0);
-			circle(roi, center, radius, Scalar(155, 50, 255), 3, 8, 0);
-		}
-		// waitKey(0);
-		for (auto vec : circles) {
-			Point center(cvRound(vec[0]), cvRound(vec[1]));
-			int radius = cvRound(vec[2]);
-			if(everage(croi,center.x-radius/1.5, center.y - radius / 1.5, radius*1.4,radius*1.4)<50)continue;
-			circle(croi, center, radius, Scalar(155, 250, 255), 3, 8, 0);
-			circle(roi, center, radius, Scalar(155, 250, 255), 3, 8, 0);
-			last_radius = radius;
-			last_pos = center + roiRectRect.tl();
-			found = true;
-			break;
-		}
-		if(cnt>=5){
-			s1++; s2++; s3++; s4++;
-		}
-		else if (!found) {
-			s1--; s2--; s3--; s4--;
-		}
-			// //ÔÚÉÏÒ»´ÎÔ²ĞÄÖÜÎ§ÕÒµ½Ä¿±ê
-			// if(distanceP(center, last_pos) <= search_range && abs(last_radius - radius) <= search_range) {
-			// 	circle(frame, center, radius, Scalar(155, 50, 255), 3, 8, 0);
-			// 	cout << "==> Found My Circle at (" << center.x << "," << center.y << "),\tradius=" << radius <<
-			// 		",\tdisplacement=" << distanceP(center, last_pos) << "px." << endl;
-			// 	last_pos = center;
-			// 	last_radius = radius;
-			// 	found = true;
-			// } else 
-			// 	circle(roi, center, radius, Scalar(0, 255, 0), 3, 8, 0);
-		// }
-		// if(!found) {
-			// s3 -= 1;
-			// s4 -= 1;
-		// }
-  //
-		 //ãĞÖµ²ÎÊıµÄÔö¼õÁ¿
-		 int n = 1;
-   //
-		 // //·ÀÖ¹µ¥´ÎÊ±¼ä¹ı³¤µ¼ÖÂËÀ»ú
-		 // //ÒÀ¾İÔËĞĞÊ±¼äÄâºÏÇúÏß¿ØÖÆãĞÖµ
-		 // int k = 3; //ÄâºÏÇúÏßÖ¸Êı
-		 // double everage_ms = 110; //»ù×¼Ê±¼ä
-		 // if(t1 - t0 > everage_ms + 50)
-		 // 	n = cut(pow((t1 - t0) / everage_ms, k), 1, 100);
-   //
-		 // if(cnt >= 5) {
-		 // 	n = n + (cnt - 4);
-		 // 	s1 += n;
-		 // 	s2 += n;
-		 // 	s3 += n;
-		 // 	s4 += n;
-		 // }
-		 // if(cnt <= 2) {
-		 // 	n = n + (2 - cnt);
-		 // 	s1 -= n;
-		 // 	s2 -= n;
-		 // 	s3-=n; 
-		 // 	s4-=n;
-		 // }
-  
-		 circle(frame, last_pos, 3, Scalar(255, 255, 0), 3);
-		 cout << "interval=" << t1 - t0 << "ms,\tcnt=" << cnt << ",\tfactor=" << n << endl;
-		imshow("frame", frame);
-		waitKey(1);
-	}
+        Mat frame = original_frame.clone();
 
-	return 0;
+        //é¢„å¤„ç†
+        GaussianBlur(frame, frame, Size(9, 9), 10, 10);
+        cvtColor(frame, frame, COLOR_BGR2HSV);
+
+        //inRange(frame, Scalar(iLowH, iLowS, iLowV), Scalar(iHighH, iHighS,iHighV),frame);
+        frame = getChannel(frame, 0);
+
+        for(int i = 0; i < frame.cols * frame.rows; i++) {
+            uchar& n = frame.at<uchar>(i);
+            if(n < iHighH && n > iLowH) n = 255;
+            else n = 0;
+        }
+
+        GaussianBlur(frame, frame, Size(9, 9), 10, 10);
+        Mat element = getStructuringElement(MORPH_ELLIPSE, Size(5, 5));
+        /// è…èš€æ“ä½œ
+        dilate(frame, frame, element);
+        //dilate( frame, frame, element );
+        //dilate( frame, frame, element );
+        //dilate( frame, frame, element );
+
+//		equalizeHist(frame, frame);
+        //è¿æ¥è¿é€šåŸŸ
+        //morphologyEx(frame, frame, MORPH_CLOSE, element);
+
+        //æ‰¾åœ†ï¼Œè®°å½•è¿è¡Œæ—¶é—´
+        vector<Vec3f> circles;
+// 		clock_t t0 = clock();
+// 		Rect frameRect(0, 0, frame.cols, frame.rows);
+// 		Rect roiRectRect(last_pos.x - last_radius - search_range, last_pos.y - last_radius - search_range, 2 * (last_radius + search_range), 2 * (last_radius + search_range));
+// 		roiRectRect &= frameRect;
+// 		Mat roi = frame(roiRectRect);
+// 		Mat croi = original_frame(roiRectRect);
+
+// 		rectangle(frame, roiRectRect, Scalar(0, 0, 255), 3);
+// 		rectangle(original_frame ,roiRectRect, Scalar(0, 0, 255), 3);
+
+        HoughCircles(frame, circles, HOUGH_GRADIENT, 1, h / 5, s1, s2, h / 10, 0);
+// 		clock_t t1 = clock();
+
+ 		int cnt = circles.size();
+
+// 		//ä¾æ¬¡åœ¨å›¾ä¸­ç»˜åˆ¶å‡ºåœ†
+        Mat colored;
+        cvtColor(frame, colored, COLOR_GRAY2BGR);
+ 		bool found = false;
+        for(auto vec : circles) {
+            Point center(cvRound(vec[0]), cvRound(vec[1]));
+            int radius = cvRound(vec[2]);
+            if(everage(frame, center.x - radius / 3, center.y - radius / 3, radius / 2, radius / 2) > 200) {
+                circle(colored, center, radius, Scalar(155, 50, 255), 3, 8, 0);
+                circle(colored, center, 1, Scalar(155, 50, 255), 3, 8, 0);
+                found=true;
+                break;
+            }
+            else {
+                //circle(colored, center, radius, Scalar(0, 0, 255), 3, 8, 0);
+            }
+        }
+// 		for (auto vec : circles) {
+// 			Point center(cvRound(vec[0]), cvRound(vec[1]));
+// 			int radius = cvRound(vec[2]);
+// 			circle(frame, center, radius, Scalar(155, 250, 255), 3, 8, 0);
+// 			last_radius = radius;
+// 			last_pos = center;
+// 			break;
+// 		}
+// 		 //é˜ˆå€¼å‚æ•°çš„å¢å‡é‡
+ 		 int n = 1;
+        //
+        // //é˜²æ­¢å•æ¬¡æ—¶é—´è¿‡é•¿å¯¼è‡´æ­»æœº
+        // //ä¾æ®è¿è¡Œæ—¶é—´æ‹Ÿåˆæ›²çº¿æ§åˆ¶é˜ˆå€¼
+        // int k = 3; //æ‹Ÿåˆæ›²çº¿æŒ‡æ•°
+        // double everage_ms = 110; //åŸºå‡†æ—¶é—´
+        // if(t1 - t0 > everage_ms + 50)
+        // 	n = cut(pow((t1 - t0) / everage_ms, k), 1, 100);
+        //
+         if(cnt >= 5) {
+         	n = n + (cnt - 4);
+         	s1 += n;
+         	s2 += n;
+         }
+         if(cnt <= 1 || !found) {
+         	n = n + (2 - cnt);
+         	s1 -= n;
+         	s2 -= n;
+         }
+
+// 		 cout << "interval=" << t1 - t0 << "ms,\tcnt=" << cnt << ",\tfactor=" << n << endl;
+        imshow("frame", colored);
+        waitKey(1);
+    }
+
+    return 0;
 }
